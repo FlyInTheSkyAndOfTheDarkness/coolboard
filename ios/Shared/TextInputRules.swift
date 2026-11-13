@@ -1,6 +1,6 @@
 import Foundation
 
-struct WordLexicon: Decodable {
+struct WordLexicon: Decodable, Sendable {
     let words: [String]
     let corrections: [String: String]
 }

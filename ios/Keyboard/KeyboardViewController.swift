@@ -17,11 +17,11 @@ final class KeyboardViewController: UIInputViewController {
             host.view.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             host.view.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             host.view.topAnchor.constraint(equalTo: view.topAnchor),
-            host.view.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor)
+            host.view.bottomAnchor.constraint(equalTo: view.bottomAnchor)
         ])
         host.didMove(toParent: self)
         let constraint = view.heightAnchor.constraint(equalToConstant: model.height)
-        constraint.priority = .defaultHigh
+        constraint.priority = UILayoutPriority(999)
         constraint.isActive = true
         heightConstraint = constraint
         primaryLanguage = model.language.locale
@@ -48,6 +48,7 @@ final class KeyboardViewController: UIInputViewController {
         super.viewWillDisappear(animated)
         model?.clipboardMonitor.stop()
         model?.toolsTask?.cancel()
+        model?.cancelPendingInput()
         model?.toolsLoading = false
         model?.gliding = false
         model?.glidePoints = []
@@ -58,12 +59,15 @@ final class KeyboardViewController: UIInputViewController {
     }
 
     override func selectionDidChange(_ textInput: UITextInput?) {
+        model?.cancelPendingInput()
         model?.refreshContext()
     }
 
     func updateHeight() {
         guard let model else { return }
-        let height = model.height + view.safeAreaInsets.bottom
+        let landscape = view.window?.windowScene?.interfaceOrientation.isLandscape ?? false
+        if model.landscape != landscape { model.landscape = landscape }
+        let height = model.height
         if heightConstraint?.constant != height { heightConstraint?.constant = height }
         view.backgroundColor = model.palette.background
     }
@@ -74,12 +78,15 @@ final class KeyboardModel: ObservableObject {
     weak var controller: KeyboardViewController?
     let layouts: KeyboardLayouts
     @Published var preferences: KeyboardPreferences
+    @Published var landscape = false
     @Published var library: ClipLibrary
     @Published var clipboardStatus = "Авто · последние 10 текстов"
     @Published var clipboardNeedsRetry = false
     @Published var clipSection = "history"
     lazy var clipboardMonitor = ClipboardMonitor(model: self)
-    @Published var panel = "keys"
+    @Published var panel = "keys" {
+        didSet { if panel != oldValue { cancelGlide() } }
+    }
     @Published var search = ""
     @Published var message: String?
     @Published var symbolPage = -1
@@ -114,6 +121,10 @@ final class KeyboardModel: ObservableObject {
     let emoji: EmojiCatalog
     private let suggestionEngine = SuggestionEngine()
     private var suggestionTask: Task<Void, Never>?
+    private var glideTask: Task<Void, Never>?
+    private let glideWorker = GlideRankingWorker()
+    private var inputGeneration = UUID()
+    private var suggestionRequest: String?
     private var suggestionWord: String?
     private var suggestionDocument: UUID?
     private var composingWord: String?
@@ -164,12 +175,16 @@ final class KeyboardModel: ObservableObject {
     var language: KeyboardLanguage { layouts.languages.first { $0.id == preferences.language } ?? layouts.languages[0] }
     var palette: KeyboardPalette { KeyboardPalette.named(preferences.theme) }
     var localPrediction: LocalPredictionEngine { suggestionEngine.prediction }
-    var keyHeight: CGFloat { preferences.size == "compact" ? 36 : preferences.size == "large" ? 52 : 44 }
+    var metrics: KeyboardMetrics {
+        KeyboardMetrics(size: preferences.size, landscape: landscape,
+                        letterRows: max(rows.count, language.rows.count + (preferences.numberRow ? 1 : 0)))
+    }
+    var keyHeight: CGFloat { metrics.keyHeight }
     var rows: [String] {
         if symbolPage >= 0 { return layouts.symbols[min(symbolPage, layouts.symbols.count - 1)] }
         return (preferences.numberRow ? ["1234567890"] : []) + language.rows
     }
-    var height: CGFloat { max(320, 54 + CGFloat(rows.count + 1) * (keyHeight + 6) + 42) + (message == nil ? 0 : 45) + (preferences.predictions || searchTarget != nil || undo != nil ? 36 : 0) }
+    var height: CGFloat { metrics.typingHeight }
     var automaticUpper: Bool {
         guard preferences.autoCap, searchTarget == nil else { return false }
         let trait = controller?.textDocumentProxy.autocapitalizationType ?? .sentences
@@ -180,28 +195,43 @@ final class KeyboardModel: ObservableObject {
     }
     var upper: Bool { caps || (shiftOverride ?? automaticUpper) }
 
-    func refreshContext() {
-        context = controller?.textDocumentProxy.documentContextBeforeInput ?? ""
-        if !canUndo { undo = nil }
-        suggestionTask?.cancel()
-        guard preferences.predictions, searchTarget == nil else { suggestions = []; return }
+    func refreshContext(force: Bool = false) {
+        let currentContext = controller?.textDocumentProxy.documentContextBeforeInput ?? ""
+        if context != currentContext { context = currentContext }
+        if undo != nil && !canUndo { undo = nil }
+        guard preferences.predictions || preferences.autocorrect, searchTarget == nil else {
+            suggestionTask?.cancel(); suggestionRequest = nil
+            if !suggestions.isEmpty { suggestions = [] }
+            return
+        }
         guard let word = activeWord else {
-            suggestions = preferences.nextWord ? localPrediction.next(context: context, language: language.id) : []
+            suggestionTask?.cancel(); suggestionRequest = nil
+            let next = preferences.predictions && preferences.nextWord ? localPrediction.next(context: context, language: language.id) : []
+            if suggestions != next { suggestions = next }
             suggestionWord = nil; suggestionDocument = controller?.textDocumentProxy.documentIdentifier
             return
         }
-        if suggestionWord != word || suggestionDocument != controller?.textDocumentProxy.documentIdentifier { suggestions = [] }
+        let document = controller?.textDocumentProxy.documentIdentifier
+        let request = language.id + ":" + word + ":" + (document?.uuidString ?? "")
+        guard force || suggestionRequest != request else { return }
+        suggestionTask?.cancel()
+        suggestionRequest = request
+        if suggestionWord != word || suggestionDocument != document { suggestions = [] }
         let language = self.language
         suggestionTask = Task { [weak self] in
             try? await Task.sleep(nanoseconds: 80_000_000)
             guard !Task.isCancelled, let self, self.activeWord == word else { return }
-            var words = self.suggestionEngine.suggestions(word: word, language: language, personal: self.personalWords[language.id] ?? [])
+            var words = await self.suggestionEngine.suggestions(word: word, language: language, personal: self.personalWords[language.id] ?? [])
+            guard !Task.isCancelled, self.suggestionRequest == request,
+                  self.activeWord == word, self.language.id == language.id,
+                  self.controller?.textDocumentProxy.documentIdentifier == document else { return }
             if self.preferences.multilingual {
                 for other in self.layouts.languages where other.id != language.id && self.preferences.enabledLanguages.contains(other.id) {
                     words += self.localPrediction.completions(word: word, language: other.id)
                 }
             }
-            self.suggestions = Array(NSOrderedSet(array: words).array.compactMap { $0 as? String }.prefix(3))
+            let next = self.preferences.predictions ? Array(NSOrderedSet(array: words).array.compactMap { $0 as? String }.prefix(3)) : []
+            if self.suggestions != next { self.suggestions = next }
             self.suggestionWord = word
             self.suggestionDocument = self.controller?.textDocumentProxy.documentIdentifier
         }
@@ -218,7 +248,19 @@ final class KeyboardModel: ObservableObject {
             && proxy.documentContextAfterInput == undo.after && (proxy.selectedText ?? "").isEmpty
     }
 
-    func resetComposition() { composingWord = nil; composingDocument = nil; undo = nil; lastSpace = .distantPast; lastShift = .distantPast }
+    private func cancelGlide() {
+        glideTask?.cancel(); glideTask = nil; inputGeneration = UUID()
+    }
+
+    func cancelPendingInput() {
+        cancelGlide(); suggestionTask?.cancel(); suggestionTask = nil; suggestionRequest = nil
+    }
+
+    func resetComposition() {
+        cancelPendingInput()
+        composingWord = nil; composingDocument = nil; undo = nil
+        lastSpace = .distantPast; lastShift = .distantPast
+    }
 
     func undoCorrection(keepDelimiter: Bool = true) {
         guard canUndo, let undo, let proxy = controller?.textDocumentProxy else { self.undo = nil; return }
@@ -247,7 +289,7 @@ final class KeyboardModel: ObservableObject {
         if !words.contains(word) { words.insert(word, at: 0) }
         personalWords[language.id] = Array(words.prefix(500))
         if let data = try? JSONEncoder().encode(personalWords) { storage.set(data, forKey: "personalWords") }
-        refreshContext(); notice("«\(word)» добавлено в твой словарь.")
+        refreshContext(force: true); notice("«\(word)» добавлено в твой словарь.")
     }
 
     func notice(_ text: String) {
@@ -265,7 +307,7 @@ final class KeyboardModel: ObservableObject {
         catch { notice("Не удалось сохранить настройки.") }
         controller?.primaryLanguage = language.locale
         controller?.updateHeight()
-        refreshContext()
+        refreshContext(force: true)
         clipboardMonitor.preferenceChanged()
     }
 
@@ -276,6 +318,7 @@ final class KeyboardModel: ObservableObject {
     }
 
     func insert(_ text: String, space: Bool = false) {
+        cancelGlide()
         lastShift = .distantPast
         glideOptions = []; glideInserted = nil
         if preferences.haptics && controller?.hasFullAccess == true { UISelectionFeedbackGenerator().selectionChanged() }
@@ -294,7 +337,7 @@ final class KeyboardModel: ObservableObject {
         if preferences.autocorrect, isBoundary, proxy.autocorrectionType != .no,
            ![UIKeyboardType.emailAddress, .URL, .asciiCapable, .numbersAndPunctuation, .numberPad, .decimalPad].contains(proxy.keyboardType ?? .default),
            let word = activeWord, word == composingWord, composingDocument == proxy.documentIdentifier,
-           !(preferences.multilingual && preferences.enabledLanguages.contains(where: { $0 != language.id && localPrediction.words(language: $0).contains(word.lowercased()) })),
+           !(preferences.multilingual && preferences.enabledLanguages.contains(where: { $0 != language.id && localPrediction.contains(word, language: $0) })),
            let fix = suggestionEngine.automaticCorrection(word: word, language: language, personal: personalWords[language.id] ?? []) {
             for _ in word { proxy.deleteBackward() }
             proxy.insertText(fix + text)
@@ -335,6 +378,7 @@ final class KeyboardModel: ObservableObject {
     }
 
     func delete() {
+        cancelGlide()
         lastShift = .distantPast
         if let target = searchTarget {
             if target == "emoji" { if !emojiQuery.isEmpty { emojiQuery.removeLast() } }
@@ -350,6 +394,7 @@ final class KeyboardModel: ObservableObject {
     }
 
     func shift() {
+        cancelGlide()
         if symbolPage >= 0 { symbolPage = (symbolPage + 1) % layouts.symbols.count; return }
         if Date().timeIntervalSince(lastShift) < 0.3 {
             caps.toggle(); shiftOverride = nil; lastShift = .distantPast
@@ -395,6 +440,7 @@ final class KeyboardModel: ObservableObject {
 
     func beginGlide(at point: CGPoint) {
         guard preferences.glide, symbolPage < 0, searchTarget == nil else { return }
+        cancelGlide()
         gliding = true; glidePoints = [point]
         glideBefore = controller?.textDocumentProxy.documentContextBeforeInput
         glideAfter = controller?.textDocumentProxy.documentContextAfterInput
@@ -402,18 +448,32 @@ final class KeyboardModel: ObservableObject {
     }
 
     func finishGlide(centers: [String: CGPoint]) {
-        defer { glidePoints = []; DispatchQueue.main.asyncAfter(deadline: .now() + 0.06) { [weak self] in self?.gliding = false } }
+        defer { glidePoints = []; DispatchQueue.main.async { [weak self] in self?.gliding = false } }
         guard gliding, let proxy = controller?.textDocumentProxy,
               proxy.documentIdentifier == glideDocument, proxy.documentContextBeforeInput == glideBefore,
               proxy.documentContextAfterInput == glideAfter, (proxy.selectedText ?? "").isEmpty else { return }
         let words = (personalWords[language.id] ?? []) + localPrediction.words(language: language.id)
-        let options = GlideDecoder.rank(trace: glidePoints.map { TracePoint(x: Double($0.x), y: Double($0.y)) },
-                                        centers: centers.mapValues { TracePoint(x: Double($0.x), y: Double($0.y)) }, words: words)
-        guard let chosen = options.first else { notice("Не удалось распознать жест. Попробуй ещё раз."); return }
-        let text = caps ? chosen.uppercased(with: Locale(identifier: language.locale)) : upper ? String(chosen.prefix(1)).uppercased(with: Locale(identifier: language.locale)) + chosen.dropFirst() : chosen
-        insert(text + " ")
-        glideOptions = options; glideInserted = text
-        glideBefore = proxy.documentContextBeforeInput; glideAfter = proxy.documentContextAfterInput; glideDocument = proxy.documentIdentifier
+        let trace = glidePoints.map { TracePoint(x: Double($0.x), y: Double($0.y)) }
+        let keyCenters = centers.mapValues { TracePoint(x: Double($0.x), y: Double($0.y)) }
+        let generation = inputGeneration
+        let before = glideBefore, after = glideAfter, document = glideDocument
+        let language = self.language, uppercase = caps, initialUpper = upper
+        glideTask = Task { [weak self] in
+            guard let self else { return }
+            let options = await self.glideWorker.rank(trace: trace, centers: keyCenters, words: words)
+            guard !Task.isCancelled, self.inputGeneration == generation,
+                  self.preferences.glide, self.language.id == language.id,
+                  self.panel == "keys", self.symbolPage < 0, self.searchTarget == nil,
+                  let proxy = self.controller?.textDocumentProxy, proxy.documentIdentifier == document,
+                  proxy.documentContextBeforeInput == before, proxy.documentContextAfterInput == after,
+                  (proxy.selectedText ?? "").isEmpty else { return }
+            guard let chosen = options.first else { self.notice("Не удалось распознать жест. Попробуй ещё раз."); return }
+            let locale = Locale(identifier: language.locale)
+            let text = uppercase ? chosen.uppercased(with: locale) : initialUpper ? String(chosen.prefix(1)).uppercased(with: locale) + chosen.dropFirst() : chosen
+            self.insert(text + " ")
+            self.glideOptions = options; self.glideInserted = text
+            self.glideBefore = proxy.documentContextBeforeInput; self.glideAfter = proxy.documentContextAfterInput; self.glideDocument = proxy.documentIdentifier
+        }
     }
 
     func replaceGlide(_ word: String) {

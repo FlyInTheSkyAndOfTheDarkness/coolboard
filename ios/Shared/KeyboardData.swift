@@ -1,6 +1,29 @@
 import Foundation
 
-struct KeyboardLanguage: Decodable, Identifiable {
+/// The view and its controller share one height calculation. The system owns
+/// the globe/dictation area below the extension; it isn't part of this height.
+struct KeyboardMetrics {
+    let size: String
+    let landscape: Bool
+    let letterRows: Int
+
+    let headerHeight: CGFloat = 34
+    let contentSpacing: CGFloat = 4
+    let verticalPadding: CGFloat = 4
+    var rowSpacing: CGFloat { landscape ? 4 : 6 }
+    var keyHeight: CGFloat {
+        if landscape { return size == "compact" ? 28 : size == "large" ? 36 : 32 }
+        return size == "compact" ? 36 : size == "large" ? 48 : 42
+    }
+    var keysHeight: CGFloat {
+        CGFloat(letterRows + 1) * keyHeight + CGFloat(letterRows) * rowSpacing
+    }
+    var typingHeight: CGFloat {
+        headerHeight + contentSpacing + keysHeight + verticalPadding * 2
+    }
+}
+
+struct KeyboardLanguage: Decodable, Identifiable, Sendable {
     let id: String
     let title: String
     let name: String?

@@ -45,23 +45,19 @@ struct KeyboardView: View {
                 }
             }.background(Color(model.palette.background))
         }
+        .ignoresSafeArea(.keyboard)
     }
 
     private var keyboardContent: some View {
-        VStack(spacing: 6) {
+        VStack(spacing: model.metrics.contentSpacing) {
             toolbar
-            if let message = model.message {
-                Text(message).font(.system(size: 11)).foregroundColor(Color(model.palette.accent))
-                    .lineLimit(3).frame(maxWidth: .infinity, alignment: .leading)
-            }
-            if model.panel == "keys" { predictionBar }
             if model.panel == "clips" { clips }
             else if model.panel == "emoji" { emojiPanel }
             else if model.panel == "settings" { settings }
             else if ["tools", "translate", "gifs", "web", "stickers", "voice"].contains(model.panel) { ExtraKeyboardPanel(model: model) }
             else { keys }
         }
-        .padding(.horizontal, 5).padding(.bottom, 5)
+        .padding(.horizontal, 5).padding(.vertical, model.metrics.verticalPadding)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .background {
             if model.preferences.theme == "photo", let data = model.backgroundData, let image = UIImage(data: data) {
@@ -71,28 +67,36 @@ struct KeyboardView: View {
         .foregroundColor(Color(model.palette.text))
         .tint(Color(model.palette.accent))
         .environment(\.colorScheme, ["gboard", "paper"].contains(model.preferences.theme) ? .light : .dark)
+        .overlay(alignment: .top) {
+            if let message = model.message {
+                Text(message).font(.system(size: 11)).lineLimit(2)
+                    .padding(8).background(Color(model.palette.special)).cornerRadius(8)
+                    .padding(.horizontal, 12).offset(y: model.metrics.headerHeight + 8)
+                    .allowsHitTesting(false)
+            }
+        }
     }
 
     private var toolbar: some View {
-        HStack(spacing: 3) {
+        HStack(spacing: 4) {
             tool("square.grid.2x2", "Все инструменты", active: model.panel == "tools") { model.openTool("tools") }
-            tool("keyboard", "Клавиатура", active: model.panel == "keys") { model.panel = "keys" }
-            tool("face.smiling", "Эмодзи", active: model.panel == "emoji") { model.searchTarget = nil; model.panel = "emoji" }
-            tool("doc.on.clipboard", "История: \(model.library.history.count) из 10", active: model.panel == "clips") { model.panel = "clips" }
-            tool("text.badge.plus", "Сохранить выделенный текст") { model.saveSelection() }
-            tool("arrow.left", "Курсор влево") { model.moveCursor(-1) }
-            tool("arrow.right", "Курсор вправо") { model.moveCursor(1) }
-            Spacer(minLength: 0)
+            if model.panel == "keys" {
+                predictionBar.frame(maxWidth: .infinity)
+            } else {
+                Button { model.searchTarget = nil; model.panel = "keys" } label: {
+                    Image(systemName: "keyboard").frame(maxWidth: .infinity, minHeight: 30)
+                }.buttonStyle(.plain).accessibilityLabel("К клавиатуре")
+            }
             Button("Т9") { model.preferences.autocorrect.toggle(); model.savePreferences() }
                 .font(.system(size: 12, weight: .semibold)).frame(width: 28, height: 34)
                 .foregroundColor(Color(model.preferences.autocorrect ? model.palette.accent : model.palette.muted))
                 .accessibilityLabel("Т9: автокоррекция")
                 .accessibilityValue(model.preferences.autocorrect ? "Включена" : "Выключена")
                 .buttonStyle(.plain)
+            tool("doc.on.clipboard", "История: \(model.library.history.count) из 10", active: model.panel == "clips") { model.panel = "clips" }
             tool("gearshape", "Настройки", active: model.panel == "settings") { model.panel = "settings" }
         }
-        .padding(.horizontal, 7).frame(height: 40)
-        .overlay(alignment: .bottom) { Color(model.palette.muted).opacity(0.15).frame(height: 0.5) }
+        .frame(height: model.metrics.headerHeight)
     }
 
     @ViewBuilder private var predictionBar: some View {
@@ -115,7 +119,7 @@ struct KeyboardView: View {
         } else if model.preferences.predictions {
             HStack(spacing: 4) {
                 if model.suggestions.isEmpty {
-                    Text(model.activeWord ?? "CoolBoard")
+                    Text(model.activeWord ?? "")
                         .font(.system(size: 12)).foregroundColor(Color(model.palette.muted))
                         .lineLimit(1).frame(maxWidth: .infinity)
                 } else {
@@ -126,11 +130,10 @@ struct KeyboardView: View {
                             .buttonStyle(.plain).accessibilityLabel("Подсказка: " + suggestion)
                     }
                 }
-                if model.activeWord != nil {
-                    Button { model.rememberWord() } label: { Image(systemName: "plus.book.closed").frame(width: 30, height: 30) }
-                        .buttonStyle(.plain).accessibilityLabel("Запомнить слово")
-                }
             }.frame(height: 30)
+                .contextMenu { Button("Запомнить слово") { model.rememberWord() } }
+        } else {
+            Color.clear.frame(height: 30)
         }
     }
 
@@ -141,10 +144,13 @@ struct KeyboardView: View {
             .accessibilityLabel(label)
     }
 
-    private func key(_ text: String, label: String? = nil, width: CGFloat? = nil, special: Bool = false, accent: Bool = false, kazakh: Bool = false, hint: String? = nil, action: @escaping () -> Void) -> some View {
+    private func key(_ text: String, systemImage: String? = nil, label: String? = nil, width: CGFloat? = nil, special: Bool = false, accent: Bool = false, kazakh: Bool = false, hint: String? = nil, action: @escaping () -> Void) -> some View {
         Button(action: action) {
-            Text(text)
-                .font(.system(size: special ? 14 : 21, weight: .regular))
+            Group {
+                if let systemImage { Image(systemName: systemImage) }
+                else { Text(text) }
+            }
+                .font(.system(size: systemImage != nil ? 18 : special ? 14 : 21, weight: .regular))
                 .minimumScaleFactor(0.55).lineLimit(1)
                 .frame(maxWidth: width == nil ? .infinity : nil)
                 .frame(width: width, height: model.keyHeight)
@@ -162,7 +168,7 @@ struct KeyboardView: View {
         GeometryReader { geometry in
             keyboardRows(width: geometry.size.width)
         }
-        .frame(height: CGFloat(model.rows.count + 1) * (model.keyHeight + 6) - 6 + 34)
+        .frame(height: model.metrics.keysHeight)
     }
 
     private var mainLetterRow: String {
@@ -170,13 +176,14 @@ struct KeyboardView: View {
     }
 
     private func keyboardRows(width: CGFloat) -> some View {
-        VStack(spacing: 6) {
+        VStack(spacing: model.metrics.rowSpacing) {
             ForEach(Array(model.rows.enumerated()), id: \.offset) { item in
                 letterRow(item.element, last: item.offset == model.rows.count - 1, width: width)
             }
+            if model.rows.count < model.metrics.letterRows { Spacer(minLength: 0) }
             bottomKeys
-            keyboardDock
         }
+        .frame(height: model.metrics.keysHeight)
         .coordinateSpace(name: "letters")
         .onPreferenceChange(LetterFramesKey.self) { letterFrames = $0 }
         .simultaneousGesture(glideGesture)
@@ -186,8 +193,9 @@ struct KeyboardView: View {
     private func letterRow(_ row: String, last: Bool, width: CGFloat) -> some View {
         let columns = model.symbolPage < 0 ? mainLetterRow.count : 10
         let standardWidth = max(10, (width - CGFloat(columns - 1) * 4) / CGFloat(columns))
-        let letterWidth = min(standardWidth, (width - CGFloat(row.count - 1) * 4) / CGFloat(row.count))
-        let sideWidth = max(16, (width - CGFloat(row.count) * letterWidth - CGFloat(row.count + 1) * 4) / 2)
+        let sideWidth = max(28, min(44, standardWidth * 1.2))
+        let availableWidth = width - (last ? sideWidth * 2 + 8 : 0)
+        let letterWidth = min(standardWidth, (availableWidth - CGFloat(row.count - 1) * 4) / CGFloat(row.count))
         return HStack(spacing: 4) {
             if last { shiftKey(width: sideWidth) }
             ForEach(Array(row.enumerated()), id: \.offset) { item in
@@ -201,8 +209,9 @@ struct KeyboardView: View {
     }
 
     private func shiftKey(width: CGFloat) -> some View {
-        let label = model.symbolPage < 0 ? (model.caps ? "?" : "?") : (model.symbolPage == 0 ? "#+=" : "123")
-        return key(label, label: "Shift", width: width, special: true, accent: model.symbolPage < 0 && model.upper) { model.shift() }
+        let title = model.symbolPage == 0 ? "#+=" : "123"
+        let icon = model.symbolPage < 0 ? (model.caps ? "capslock.fill" : model.upper ? "shift.fill" : "shift") : nil
+        return key(title, systemImage: icon, label: "Shift", width: width, special: true, accent: model.symbolPage < 0 && model.upper) { model.shift() }
     }
 
     private func characterKey(_ text: String, index: Int, row: String, width: CGFloat) -> some View {
@@ -221,41 +230,29 @@ struct KeyboardView: View {
 
     private var bottomKeys: some View {
         HStack(spacing: 4) {
-            key(model.symbolPage < 0 ? "123" : "???", label: "????? ? ???????", width: 36, special: true) {
+            key(model.symbolPage < 0 ? "123" : "ABC", label: "Буквы и символы", width: 38, special: true) {
                 model.symbolPage = model.symbolPage < 0 ? 0 : -1
                 model.controller?.updateHeight()
             }
-            key("?", label: "????????? ??????????", width: 30, special: true) { model.panel = "settings" }
-            key("??", label: "??????", width: 30, special: true) { model.panel = "emoji" }
-            CursorSpaceKey(title: model.language.name ?? model.language.title, palette: model.palette,
-                           insert: { model.insert(" ", space: true) }, move: { model.moveCursor($0) })
-                .frame(maxWidth: .infinity).frame(height: model.keyHeight)
-            key(".", width: 28, special: true) { model.insert(".") }
-            key("?", label: "????", width: 44, special: true, accent: true) { model.insert("\n") }
-        }
-    }
-
-    private var keyboardDock: some View {
-        HStack(spacing: 12) {
-            if let controller = model.controller {
-                SystemGlobeKey(controller: controller, palette: model.palette).frame(width: 32, height: 28)
-            }
-            Button(model.language.title) { model.nextLanguage() }
-                .font(.system(size: 12, weight: .medium)).frame(minWidth: 35, minHeight: 28)
-                .buttonStyle(.plain).accessibilityLabel("??????? ????")
+            key("", systemImage: "globe", label: "Сменить язык", width: 32, special: true) { model.nextLanguage() }
                 .contextMenu {
                     ForEach(model.layouts.languages.filter { model.preferences.enabledLanguages.contains($0.id) }) { language in
                         Button(language.name ?? language.title) { model.selectLanguage(language.id) }
                     }
-                    Button("???????? ????") { model.panel = "settings" }
+                    Button("Настроить языки") { model.panel = "settings" }
+                    Button("Следующая системная клавиатура") { model.controller?.advanceToNextInputMode() }
                 }
-            Spacer()
-            Text("CoolBoard").font(.system(size: 11)).foregroundColor(Color(model.palette.muted))
-        }.padding(.horizontal, 5)
+            key("", systemImage: "face.smiling", label: "Эмодзи", width: 32, special: true) { model.searchTarget = nil; model.panel = "emoji" }
+            CursorSpaceKey(title: model.language.name ?? model.language.title, palette: model.palette,
+                           insert: { model.insert(" ", space: true) }, move: { model.moveCursor($0) })
+                .frame(maxWidth: .infinity).frame(height: model.keyHeight)
+            key(".", width: 28, special: true) { model.insert(".") }
+            key("", systemImage: "arrow.turn.down.left", label: "Ввод", width: 44, special: true, accent: true) { model.insert("\n") }
+        }
     }
 
     private var glideGesture: some Gesture {
-        DragGesture(minimumDistance: 12, coordinateSpace: .named("letters"))
+        DragGesture(minimumDistance: 24, coordinateSpace: .named("letters"))
             .onChanged { value in
                 guard model.preferences.glide, model.symbolPage < 0, model.searchTarget == nil,
                       letterFrames.values.contains(where: { $0.contains(value.startLocation) }) else { return }

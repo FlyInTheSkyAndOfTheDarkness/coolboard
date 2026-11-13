@@ -1,6 +1,6 @@
 import Foundation
 
-struct TracePoint: Equatable {
+struct TracePoint: Equatable, Sendable {
     let x: Double
     let y: Double
     func distance(to other: TracePoint) -> Double { hypot(x - other.x, y - other.y) }
@@ -33,6 +33,7 @@ enum GlideDecoder {
         var ranked: [(String, Double)] = []
         var seen = Set<String>()
         for (index, original) in words.enumerated() {
+            if index.isMultiple(of: 64), Task.isCancelled { return [] }
             let word = original.lowercased()
             guard word.count >= 2, word.count <= 24, seen.insert(word).inserted else { continue }
             var chars: [Character] = []
@@ -57,20 +58,64 @@ enum GlideDecoder {
     }
 }
 
-final class LocalPredictionEngine {
+/// Preserve frequency order while avoiding a scan of the full dictionary for
+/// every letter, especially for prefixes that have no matching words.
+struct PrefixVocabulary: Sendable {
+    private struct Entry: Sendable {
+        let word: String
+        let lower: String
+    }
+    private let buckets: [String: [Entry]]
+    private let knownWords: Set<String>
+    private let locale: String
+
+    init(words: [String], locale: String) {
+        self.locale = locale
+        var buckets: [String: [Entry]] = [:]
+        var knownWords = Set<String>()
+        let language = Locale(identifier: locale)
+        for word in words {
+            let lower = word.lowercased(with: language)
+            guard knownWords.insert(lower).inserted else { continue }
+            let entry = Entry(word: word, lower: lower)
+            buckets[String(lower.prefix(1)), default: []].append(entry)
+            if lower.count >= 2 { buckets[String(lower.prefix(2)), default: []].append(entry) }
+        }
+        self.buckets = buckets
+        self.knownWords = knownWords
+    }
+
+    func contains(_ word: String) -> Bool {
+        knownWords.contains(word.lowercased(with: Locale(identifier: locale)))
+    }
+
+    func completions(_ word: String) -> [String] {
+        let lower = word.lowercased(with: Locale(identifier: locale))
+        guard !lower.isEmpty else { return [] }
+        return Array((buckets[String(lower.prefix(2))] ?? []).lazy
+            .filter { $0.lower.hasPrefix(lower) && $0.lower != lower }.prefix(3).map(\.word))
+    }
+}
+
+struct LocalPredictionEngine: Sendable {
     private struct Pack: Decodable { let languages: [String: [String]] }
     private let vocabulary: [String: [String]]
     private let seeds: [String: [String: [String]]]
+    private let indexes: [String: PrefixVocabulary]
     init() {
         vocabulary = Bundle.main.url(forResource: "prediction", withExtension: "json").flatMap { try? Data(contentsOf: $0) }
             .flatMap { try? JSONDecoder().decode(Pack.self, from: $0) }?.languages ?? [:]
         seeds = Bundle.main.url(forResource: "predictive-seeds", withExtension: "json").flatMap { try? Data(contentsOf: $0) }
             .flatMap { try? JSONDecoder().decode([String: [String: [String]]].self, from: $0) } ?? [:]
+        indexes = Dictionary(uniqueKeysWithValues: vocabulary.map {
+            ($0.key, PrefixVocabulary(words: $0.value, locale: $0.key))
+        })
     }
     func words(language: String) -> [String] { vocabulary[language] ?? [] }
     func completions(word: String, language: String) -> [String] {
-        Array(words(language: language).lazy.filter { $0.hasPrefix(word.lowercased()) && $0 != word.lowercased() }.prefix(3))
+        indexes[language]?.completions(word) ?? []
     }
+    func contains(_ word: String, language: String) -> Bool { indexes[language]?.contains(word) ?? false }
     func next(context: String, language: String) -> [String] {
         guard let range = context.range(of: "[\\p{L}\\p{M}]+[\\s.!?,:;]+$", options: .regularExpression) else { return [] }
         let previous = context[range].trimmingCharacters(in: .whitespacesAndNewlines.union(.punctuationCharacters)).lowercased()

@@ -3,9 +3,15 @@ import UIKit
 @MainActor
 final class SuggestionEngine {
     let prediction = LocalPredictionEngine()
-    private let checker = UITextChecker()
+    private lazy var checker = UITextChecker()
     private let lexicons: [String: WordLexicon]
-    private let available = UITextChecker.availableLanguages
+    private lazy var available = UITextChecker.availableLanguages
+    private let worker = LocalSuggestionWorker()
+    private struct SystemResult {
+        let words: [String]
+        let correction: String?
+    }
+    private var systemCache: [String: SystemResult] = [:]
 
     init() {
         lexicons = Bundle.main.url(forResource: "lexicon", withExtension: "json")
@@ -18,17 +24,32 @@ final class SuggestionEngine {
         return available.first { $0 == locale } ?? available.first { $0.replacingOccurrences(of: "-", with: "_").split(separator: "_").first.map(String.init) == language.id }
     }
 
-    func suggestions(word: String, language: KeyboardLanguage, personal: [String]) -> [String] {
-        var result = TextInputRules.suggestions(for: word, lexicon: lexicons[language.id], personalWords: personal, locale: language.locale)
-        result += prediction.completions(word: word, language: language.id)
+    func suggestions(word: String, language: KeyboardLanguage, personal: [String]) async -> [String] {
+        var result = await worker.suggestions(word: word, language: language,
+                                             personal: personal, lexicon: lexicons[language.id], prediction: prediction)
+        guard !Task.isCancelled else { return [] }
         guard word.count >= 2 else { return [] }
-        if let code = systemLanguage(language) {
+        let cacheKey = language.id + ":" + word
+        if let cached = systemCache[cacheKey] {
+            result += cached.words
+        } else if result.count < 3, let code = systemLanguage(language) {
+            // UITextChecker is main-actor isolated. Consult it only after the
+            // debounce and when the indexed local dictionary needs a fallback.
             let range = NSRange(location: 0, length: word.utf16.count)
             let misspelled = checker.rangeOfMisspelledWord(in: word, range: range, startingAt: 0, wrap: false, language: code)
+            var words: [String] = []
+            var correction: String?
             if misspelled.location != NSNotFound {
-                result += checker.guesses(forWordRange: range, in: word, language: code) ?? []
+                let guesses = checker.guesses(forWordRange: range, in: word, language: code) ?? []
+                words += guesses
+                if let guess = guesses.first,
+                   guess.first?.lowercased() == word.first?.lowercased(),
+                   TextInputRules.distance(word.lowercased(), guess.lowercased()) == 1 { correction = guess }
             }
-            result += checker.completions(forPartialWordRange: range, in: word, language: code) ?? []
+            words += checker.completions(forPartialWordRange: range, in: word, language: code) ?? []
+            if systemCache.count >= 128 { systemCache.removeAll(keepingCapacity: true) }
+            systemCache[cacheKey] = SystemResult(words: words, correction: correction)
+            result += words
         }
         var seen = Set<String>()
         return result.map { TextInputRules.preservingCase($0, original: word, locale: language.locale) }
@@ -44,12 +65,24 @@ final class SuggestionEngine {
         if let fix = lexicons[language.id]?.corrections[lower] {
             return TextInputRules.preservingCase(fix, original: word, locale: language.locale)
         }
-        guard word.count >= 4, let code = systemLanguage(language) else { return nil }
-        let range = NSRange(location: 0, length: word.utf16.count)
-        guard checker.rangeOfMisspelledWord(in: word, range: range, startingAt: 0, wrap: false, language: code).location != NSNotFound,
-              let guess = checker.guesses(forWordRange: range, in: word, language: code)?.first,
-              guess.first?.lowercased() == lower.first?.lowercased(),
-              TextInputRules.distance(lower, guess.lowercased(with: locale)) == 1 else { return nil }
+        // Space/Return must insert immediately, without a synchronous spelling
+        // service round trip. Use a correction prepared during idle prediction.
+        guard word.count >= 4, let guess = systemCache[language.id + ":" + word]?.correction else { return nil }
         return TextInputRules.preservingCase(guess, original: word, locale: language.locale)
+    }
+}
+
+private actor LocalSuggestionWorker {
+    func suggestions(word: String, language: KeyboardLanguage, personal: [String],
+                     lexicon: WordLexicon?, prediction: LocalPredictionEngine) -> [String] {
+        guard !Task.isCancelled else { return [] }
+        return TextInputRules.suggestions(for: word, lexicon: lexicon, personalWords: personal, locale: language.locale)
+            + prediction.completions(word: word, language: language.id)
+    }
+}
+
+actor GlideRankingWorker {
+    func rank(trace: [TracePoint], centers: [String: TracePoint], words: [String]) -> [String] {
+        GlideDecoder.rank(trace: trace, centers: centers, words: words)
     }
 }

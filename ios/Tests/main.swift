@@ -11,6 +11,20 @@ do {
     let keys = kazakh.rows.joined()
     for char in "әіңғүұқөһ" { expect(keys.contains(char), "Missing Kazakh letter: \(char)") }
     expect(layouts.languages.count == 8, "Expected eight language layouts")
+    let russianHeight = KeyboardMetrics(size: "normal", landscape: false, letterRows: 3).typingHeight
+    let kazakhHeight = KeyboardMetrics(size: "normal", landscape: false, letterRows: 4).typingHeight
+    let compactKazakh = KeyboardMetrics(size: "compact", landscape: false, letterRows: 4).typingHeight
+    expect(russianHeight == 232 && kazakhHeight == 280, "Fit the full keyboard without redundant toolbar/dock rows")
+    expect(compactKazakh == 250 && compactKazakh < kazakhHeight, "Compact mode must actually reduce height")
+    for language in layouts.languages {
+        let rows = language.rows.count
+        let portrait = KeyboardMetrics(size: "normal", landscape: false, letterRows: rows)
+        let landscape = KeyboardMetrics(size: "normal", landscape: true, letterRows: rows)
+        expect(landscape.typingHeight < portrait.typingHeight && landscape.typingHeight <= 230, "Fit landscape: \(language.id)")
+        expect(portrait.typingHeight <= 280, "Keep all default layouts compact: \(language.id)")
+        let numbered = KeyboardMetrics(size: "normal", landscape: false, letterRows: rows + 1)
+        expect(numbered.typingHeight - portrait.typingHeight == portrait.keyHeight + portrait.rowSpacing, "Only add one row for numbers")
+    }
     let oldPreferences = Data("{\"language\":\"ru\",\"theme\":\"ocean\",\"size\":\"large\",\"autoCap\":false}".utf8)
     var preferences = try JSONDecoder().decode(KeyboardPreferences.self, from: oldPreferences)
     expect(preferences.theme == "ocean" && preferences.size == "large" && !preferences.autoCap, "Preserve existing settings")
@@ -44,6 +58,25 @@ do {
     let prediction = try JSONSerialization.jsonObject(with: predictionData) as! [String: Any]
     let vocabularies = prediction["languages"] as! [String: [String]]
     expect(vocabularies.count == 8 && vocabularies["kk"]!.count > 4000, "Bundle real vocabularies")
+    let prefixIndex = PrefixVocabulary(words: ["The", "there", "their", "then", "The", "theta", "other"], locale: "en")
+    expect(prefixIndex.completions("TH") == ["The", "there", "their"], "Keep frequency order and accept upper-case input")
+    expect(prefixIndex.completions("the") == ["there", "their", "then"], "Exclude the word already typed")
+    expect(prefixIndex.contains("THE") && prefixIndex.completions("xyz").isEmpty, "Exact membership and missing prefixes")
+    expect(prefixIndex.completions("").isEmpty, "Do not predict an empty prefix")
+    let turkishIndex = PrefixVocabulary(words: ["ışık", "ısı", "istanbul", "İzmir"], locale: "tr")
+    expect(turkishIndex.completions("I") == ["ışık", "ısı"], "Respect Turkish dotless I")
+    expect(turkishIndex.completions("İ") == ["istanbul", "İzmir"], "Respect Turkish dotted I")
+    let predictionStart = Date()
+    var indexedLookups = 0
+    for (language, words) in vocabularies {
+        let index = PrefixVocabulary(words: words, locale: language)
+        for word in words.prefix(100) {
+            _ = index.completions(String(word.prefix(2)))
+            _ = index.completions(word + "zzzz")
+            indexedLookups += 2
+        }
+    }
+    print("Indexed prediction: \(indexedLookups) lookups including index construction in \(Date().timeIntervalSince(predictionStart)) seconds")
     var centers: [String: TracePoint] = [:]
     for (y, row) in ["qwertyuiop", "asdfghjkl", "zxcvbnm"].enumerated() {
         for (x, char) in row.enumerated() { centers[String(char)] = TracePoint(x: (Double(x) + Double(y) * 0.4) * 30, y: Double(y) * 45) }
