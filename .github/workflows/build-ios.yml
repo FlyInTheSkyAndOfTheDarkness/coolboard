@@ -1,0 +1,29 @@
+name: Build iPhone IPA
+on:
+  workflow_dispatch:
+  push:
+    paths: ['ios/**', 'shared/**', 'scripts/build-ios.sh', '.github/workflows/build-ios.yml']
+  pull_request:
+    paths: ['ios/**', 'shared/**', 'scripts/build-ios.sh', '.github/workflows/build-ios.yml']
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: macos-15
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install project generator
+        run: command -v xcodegen || brew install xcodegen
+      - name: Test native clipboard logic and layouts
+        run: |
+          swiftc ios/Shared/ClipLibrary.swift ios/Shared/KeyboardData.swift ios/Shared/TextInputRules.swift ios/Shared/GlideDecoder.swift ios/Tests/main.swift -o "$RUNNER_TEMP/coolboard-tests"
+          "$RUNNER_TEMP/coolboard-tests" shared/layouts.json shared/lexicon.json shared/emoji.json shared/prediction.json
+      - name: Build unsigned IPA
+        run: bash scripts/build-ios.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: CoolBoard-unsigned
+          path: artifacts/CoolBoard-unsigned.ipa
+          if-no-files-found: error
+          retention-days: 7

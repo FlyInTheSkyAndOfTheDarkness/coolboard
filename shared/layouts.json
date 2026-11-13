@@ -1,0 +1,40 @@
+{
+  "languages": [
+    {
+      "id": "kk", "title": "ҚАЗ", "name": "Қазақша", "locale": "kk-KZ",
+      "rows": ["әіңғүұқөһ", "йцукенгшщзхъ", "фывапролджэ", "ячсмитьбюё"]
+    },
+    {
+      "id": "ru", "title": "РУС", "name": "Русский", "locale": "ru-RU",
+      "rows": ["йцукенгшщзхъ", "фывапролджэ", "ячсмитьбюё"]
+    },
+    {
+      "id": "en", "title": "ENG", "name": "English", "locale": "en-US",
+      "rows": ["qwertyuiop", "asdfghjkl", "zxcvbnm"]
+    },
+    {
+      "id": "uk", "title": "УКР", "name": "Українська", "locale": "uk-UA",
+      "rows": ["йцукенгшщзхї", "фівапролджє", "ґячсмитьбю"]
+    },
+    {
+      "id": "de", "title": "DEU", "name": "Deutsch", "locale": "de-DE",
+      "rows": ["qwertzuiopü", "asdfghjklöä", "yxcvbnmß"]
+    },
+    {
+      "id": "tr", "title": "TÜR", "name": "Türkçe", "locale": "tr-TR",
+      "rows": ["qwertyuıopğü", "asdfghjklşi", "zxcvbnmöç"]
+    },
+    {
+      "id": "fr", "title": "FRA", "name": "Français", "locale": "fr-FR",
+      "rows": ["àâçéèêëîïôùûüÿœ", "azertyuiop", "qsdfghjklm", "wxcvbn"]
+    },
+    {
+      "id": "es", "title": "ESP", "name": "Español", "locale": "es-ES",
+      "rows": ["áéíóúü¿¡", "qwertyuiop", "asdfghjklñ", "zxcvbnm"]
+    }
+  ],
+  "symbols": [
+    ["1234567890", "-/:;()₸&@\"", ".,?!'"],
+    ["[]{}#%^*+=", "_\\|~<>€£$•", ".,?!'҂"]
+  ]
+}

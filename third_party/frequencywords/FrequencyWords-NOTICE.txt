@@ -1,0 +1,7 @@
+FrequencyWords by Hermit Dave, derived from OpenSubtitles 2018 (OPUS).
+Source commit: 525f9b560de45753a5ea01069454e72e9aa541c6
+https://github.com/hermitdave/FrequencyWords
+Adaptation by CoolBoard: lower-case vocabulary filtered to each supported layout; up to 6000 words per language, merged with local starter words.
+This adapted word-list data is licensed under CC BY-SA 4.0.
+https://creativecommons.org/licenses/by-sa/4.0/
+This data license does not apply to the separately authored application source code.

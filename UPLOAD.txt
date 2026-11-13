@@ -1,0 +1,12 @@
+CoolBoard: files for GitHub / macOS build
+
+1. Upload the CONTENTS of this folder to the root of your GitHub repository.
+   Include .github, ios, shared, scripts and third_party.
+   Do not upload the outer ipa folder as a subdirectory: GitHub must see
+   .github/workflows/build-ios.yml at the repository root.
+2. Open Actions -> Build iPhone IPA and wait for a successful build.
+3. Download the CoolBoard-unsigned artifact and extract the .ipa file.
+4. Install and sign that file with AltStore on your iPhone.
+
+This folder contains source files. It is not an installable IPA yet.
+See README.md for the full Russian instructions.

@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <title>CoolBoard — твоя клавиатура</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="/preview/style.css">
+  <link rel="stylesheet" href="/preview/features.css">
+  <link rel="stylesheet" href="/preview/gboard.css">
+  <link rel="stylesheet" href="/preview/tools.css">
+  <script type="module" src="/preview/app.js"></script>
+</head>
+<body>
+  <header class="site-header"><a class="brand" href="/" aria-label="CoolBoard"><span class="brand-icon">қ</span>coolboard<span class="version">LAB / 02</span></a><span class="local-badge"><i></i> Только на твоём устройстве</span></header>
+  <main>
+    <section class="intro">
+      <span class="eyebrow">ЖАЗ. СОХРАНЯЙ. НАСТРАИВАЙ.</span>
+      <h1>Твои слова.<br>Твои <span>правила.</span></h1>
+      <p class="lead">Привычная клавиатура в стиле Gboard. Қазақша, русский, English, твой буфер и эмодзи iPhone.</p>
+      <div class="features"><span>01 <b>Қазақша без компромиссов</b></span><span>02 <b>Библиотека фрагментов</b></span><span>03 <b>Твой цвет и размер</b></span></div>
+      <aside class="preview-note"><span>↗</span><p><strong>Проверь, как это ощущается.</strong> Справа — интерактивный предпросмотр. Нативная iOS-клавиатура находится в папке <code>ios</code>. Этот экран не заменяет клавиатуру телефона.</p></aside>
+      <p class="device-label">СОЗДАНО ДЛЯ ТВОЕГО iPHONE 11 · iOS 26.2</p>
+    </section>
+    <section class="workspace" aria-label="Предпросмотр клавиатуры">
+      <div class="workspace-heading"><span>▦ СВАЙП · ГОЛОС · GIF · ПЕРЕВОД</span><button id="clear-text" class="text-button">Очистить текст ↗</button></div>
+      <div class="phone" data-theme="graphite">
+        <div class="phone-top"><span>9:41</span><div class="island"></div><span>▰ ▰</span></div>
+        <div class="editor-heading"><span class="note-icon">▤</span><div><strong>Место для мыслей</strong><small>Попробуй написать что-нибудь</small></div><span class="editor-dots">•••</span></div>
+        <textarea id="editor" aria-label="Тестовый текст" placeholder="Сәлем! Как дела?\nHello, world." spellcheck="false"></textarea>
+        <div class="editor-footer"><span id="character-count">0 символов</span><button id="save-selection" class="text-button">Сохранить выделенное ＋</button></div>
+        <div id="media-output" aria-label="Предпросмотр картинки"></div>
+        <div class="keyboard" id="keyboard">
+<div class="toolbar"><button data-panel="tools" aria-label="Все инструменты" title="Все инструменты">▦</button><button data-panel="keys" aria-label="Клавиатура" title="Клавиатура">⌨</button><button data-panel="emoji" aria-label="Эмодзи" title="Эмодзи">😀</button><span class="toolbar-separator"></span><button data-panel="clips" aria-label="Буфер обмена" title="Буфер обмена">▤ <span id="clip-count">0</span></button><button id="cursor-left" aria-label="Курсор влево">←</button><button id="cursor-right" aria-label="Курсор вправо">→</button><span class="toolbar-spacer"></span><button id="quick-t9" aria-label="Т9: автокоррекция" title="Автокоррекция">Т9</button><button data-panel="settings" aria-label="Настройки" title="Настройки">⚙</button></div>
+          <div id="keys-panel" class="panel"></div>
+          <div id="emoji-panel" class="panel" hidden>
+            <div class="emoji-heading"><input id="emoji-search" type="search" aria-label="Поиск эмодзи" placeholder="Найти эмодзи…"><select id="emoji-tone" aria-label="Оттенок кожи"><option value="">✋</option><option value="🏻">✋🏻</option><option value="🏼">✋🏼</option><option value="🏽">✋🏽</option><option value="🏾">✋🏾</option><option value="🏿">✋🏿</option></select></div>
+            <div id="emoji-categories" aria-label="Категории эмодзи"></div>
+            <div id="emoji-variants" hidden></div>
+            <div id="emoji-grid"></div>
+            <div class="emoji-footer"><button id="emoji-back">АБВ</button><span>На iPhone — системные эмодзи Apple</span><button id="emoji-delete" aria-label="Удалить эмодзи">⌫</button></div>
+          </div>
+          <div id="clips-panel" class="panel" hidden>
+            <div class="panel-heading"><strong>История · <span id="history-count">0/10</span></strong><button id="capture-clipboard" class="capture-button" hidden>Разрешить чтение буфера</button></div>
+            <p id="clipboard-status" class="clipboard-status">Авто · последние 10 текстов</p>
+            <div class="clipboard-tabs"><button data-clip-section="history" aria-pressed="true">Последние 10</button><button data-clip-section="favorites" aria-pressed="false">Закреплённые</button></div>
+            <input id="clip-search" type="search" aria-label="Поиск фрагментов" placeholder="Найти фрагмент…">
+            <div id="clips-list"></div>
+            <form id="snippet-form"><input id="snippet-text" aria-label="Новый фрагмент" placeholder="Или добавь фразу вручную…" maxlength="10000" required><button aria-label="Сохранить фрагмент">＋</button></form>
+          </div>
+          <div id="settings-panel" class="panel" hidden>
+            <div class="panel-heading"><strong>Сделай своей</strong><span class="muted">Сохраняется автоматически</span></div>
+            <span class="setting-label">ЦВЕТ КЛАВИАТУРЫ</span><div class="theme-picker" id="theme-picker"></div>
+            <label class="setting-row" for="key-size">Размер клавиш <select id="key-size"><option value="compact">Компактный</option><option value="normal">Обычный</option><option value="large">Крупный</option></select></label>
+            <label class="setting-row" for="number-row">Цифры отдельным рядом <input id="number-row" type="checkbox" role="switch"></label>
+            <label class="setting-row" for="auto-cap">Заглавная в начале <input id="auto-cap" type="checkbox" role="switch"></label>
+            <label class="setting-row" for="double-space">Двойной пробел → точка <input id="double-space" type="checkbox" role="switch"></label>
+            <label class="setting-row" for="autocorrect">Т9: автокоррекция <input id="autocorrect" type="checkbox" role="switch"></label>
+            <label class="setting-row" for="predictions">Подсказки слов <input id="predictions" type="checkbox" role="switch"></label>
+            <label class="setting-row" for="auto-clipboard">Автосохранение последних 10 копирований <input id="auto-clipboard" type="checkbox" role="switch"></label>
+            <label class="setting-row" for="glide">Свайп-набор слов <input id="glide" type="checkbox" role="switch"></label>
+            <label class="setting-row" for="next-word">Следующее слово <input id="next-word" type="checkbox" role="switch"></label>
+            <label class="setting-row" for="multilingual">Смешанный ввод языков <input id="multilingual" type="checkbox" role="switch"></label>
+            <label class="setting-row" for="haptics">Виброотклик <input id="haptics" type="checkbox" role="switch"></label>
+            <label class="setting-row" for="online-services">Онлайн-перевод, поиск и GIF <input id="online-services" type="checkbox" role="switch"></label>
+            <label class="setting-row" for="one-handed">Одной рукой <select id="one-handed"><option value="off">Обычно</option><option value="left">Слева</option><option value="right">Справа</option></select></label>
+            <label class="setting-row" for="photo-background">Фотофон <input id="photo-background" type="file" accept="image/png,image/jpeg,image/webp" aria-label="Фотофон клавиатуры"></label>
+            <p class="setting-hint">В предпросмотре — локальный словарь. На iPhone дополнительно используется проверка слов iOS.</p>
+            <fieldset class="language-settings"><legend>Языки клавиатуры</legend><div id="language-options"></div></fieldset>
+            <button id="clear-clips" class="danger-button">Удалить незакреплённые фрагменты</button>
+            <button id="clear-history" class="danger-button">Очистить историю копирований</button>
+          </div>
+          <div class="home-indicator"></div>
+        </div>
+      </div>
+      <div class="workspace-caption"><span><i></i> Живой предпросмотр</span><span>ҚАЗ / РУС / ENG</span></div>
+    </section>
+  </main>
+  <footer><span>Меньше лишнего. Больше твоего.</span><span>Без аккаунта · Офлайн-набор · Онлайн по выбору</span></footer>
+  <svg id="glide-trace" aria-hidden="true"><path id="glide-line"></path></svg>
+  <div id="toast" role="status" aria-live="polite"></div>
+</body>
+</html>

@@ -1,0 +1,79 @@
+name: CoolBoard
+options:
+  bundleIdPrefix: dev.personal.coolboard
+  deploymentTarget:
+    iOS: "16.0"
+  developmentLanguage: ru
+settings:
+  base:
+    SWIFT_VERSION: "5.0"
+    TARGETED_DEVICE_FAMILY: "1,2"
+    MARKETING_VERSION: "0.3.0"
+    CURRENT_PROJECT_VERSION: "3"
+    CODE_SIGN_STYLE: Automatic
+targets:
+  CoolBoard:
+    type: application
+    platform: iOS
+    sources:
+      - path: App
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: dev.personal.coolboard
+        GENERATE_INFOPLIST_FILE: YES
+        INFOPLIST_KEY_CFBundleDisplayName: CoolBoard
+        INFOPLIST_KEY_NSMicrophoneUsageDescription: CoolBoard записывает голос по нажатию для преобразования в текст.
+        INFOPLIST_KEY_NSSpeechRecognitionUsageDescription: CoolBoard использует распознавание речи Apple для голосового ввода в приложении.
+        INFOPLIST_KEY_LSApplicationCategoryType: public.app-category.utilities
+        INFOPLIST_KEY_UILaunchScreen_Generation: YES
+        INFOPLIST_KEY_UIApplicationSceneManifest_Generation: YES
+        INFOPLIST_KEY_UISupportedInterfaceOrientations: UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight
+    dependencies:
+      - target: CoolBoardKeyboard
+        embed: true
+  CoolBoardKeyboard:
+    type: app-extension
+    platform: iOS
+    sources:
+      - path: Keyboard
+      - path: Shared
+      - path: ../shared/layouts.json
+        buildPhase: resources
+      - path: ../shared/lexicon.json
+        buildPhase: resources
+      - path: ../shared/emoji.json
+        buildPhase: resources
+      - path: ../shared/prediction.json
+        buildPhase: resources
+      - path: ../shared/predictive-seeds.json
+        buildPhase: resources
+      - path: ../third_party/frequencywords
+        buildPhase: resources
+      - path: ../third_party/unicode/LICENSE.txt
+        buildPhase: resources
+    info:
+      path: Keyboard/Info.plist
+      properties:
+        CFBundleDisplayName: CoolBoard
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.keyboard-service
+          NSExtensionPrincipalClass: $(PRODUCT_MODULE_NAME).KeyboardViewController
+          NSExtensionAttributes:
+            IsASCIICapable: true
+            PrefersRightToLeft: false
+            PrimaryLanguage: kk-KZ
+            RequestsOpenAccess: true
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: dev.personal.coolboard.keyboard
+        APPLICATION_EXTENSION_API_ONLY: YES
+        SKIP_INSTALL: YES
+schemes:
+  CoolBoard:
+    build:
+      targets:
+        CoolBoard: all
+    run:
+      config: Debug
+    archive:
+      config: Release
