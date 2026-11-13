@@ -13,6 +13,14 @@ xcodebuild -project CoolBoard.xcodeproj -scheme CoolBoard \
   CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO build
 APP="$ROOT/ios/build/Build/Products/Release-iphoneos/CoolBoard.app"
 test -d "$APP/PlugIns/CoolBoardKeyboard.appex"
+for key in CFBundleShortVersionString CFBundleVersion; do
+  APP_VERSION="$(plutil -extract "$key" raw -o - "$APP/Info.plist")"
+  EXTENSION_VERSION="$(plutil -extract "$key" raw -o - "$APP/PlugIns/CoolBoardKeyboard.appex/Info.plist")"
+  if [[ "$APP_VERSION" != "$EXTENSION_VERSION" ]]; then
+    echo "Version mismatch for $key: app=$APP_VERSION, keyboard=$EXTENSION_VERSION"
+    exit 1
+  fi
+done
 for resource in layouts.json lexicon.json emoji.json prediction.json predictive-seeds.json; do
   test -f "$APP/PlugIns/CoolBoardKeyboard.appex/$resource"
 done
