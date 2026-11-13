@@ -160,85 +160,122 @@ struct KeyboardView: View {
 
     private var keys: some View {
         GeometryReader { geometry in
-          let mainRow = ["kk", "fr", "es"].contains(model.language.id) ? model.language.rows[1] : model.language.rows[0]
-          let baseCount = model.symbolPage < 0 ? mainRow.count : 10
-          let letterWidth = max(10, (geometry.size.width - CGFloat(baseCount - 1) * 4) / CGFloat(baseCount))
-          VStack(spacing: 6) {
-            ForEach(Array(model.rows.enumerated()), id: \.offset) { rowIndex, row in
-                let rowWidth = min(letterWidth, (geometry.size.width - CGFloat(row.count - 1) * 4) / CGFloat(row.count))
-                let sideWidth = max(16, (geometry.size.width - CGFloat(row.count) * rowWidth - CGFloat(row.count + 1) * 4) / 2)
-                HStack(spacing: 4) {
-                    if rowIndex == model.rows.count - 1 {
-                        key(model.symbolPage < 0 ? (model.caps ? "⇪" : "⇧") : (model.symbolPage == 0 ? "#+=" : "123"), label: "Shift", width: sideWidth, special: true, accent: model.symbolPage < 0 && model.upper) { model.shift() }
-                    }
-                    ForEach(Array(row.enumerated()), id: \.offset) { charIndex, character in
-                        let text = String(character)
-                        let showHint = model.symbolPage < 0 && row == mainRow && !model.preferences.numberRow && charIndex < 10
-                        key(model.symbolPage < 0 && model.upper ? text.uppercased(with: Locale(identifier: model.language.locale)) : text,
-                            width: rowWidth,
-                            kazakh: model.symbolPage < 0 && model.language.id == "kk" && row == model.language.rows[0],
-                            hint: showHint ? String((charIndex + 1) % 10) : nil) {
-                            model.typeCharacter(text)
-                        }
-                        .background(GeometryReader { keyGeometry in
-                            Color.clear.preference(key: LetterFramesKey.self, value: character.isLetter ? [text: keyGeometry.frame(in: .named("letters"))] : [:])
-                        })
-                        .contextMenu {
-                            if showHint { Button(String((charIndex + 1) % 10)) { model.insert(String((charIndex + 1) % 10)) } }
-                        }
-                    }
-                    if rowIndex == model.rows.count - 1 {
-                        RepeatDeleteKey(palette: model.palette) { model.delete() }
-                            .frame(width: sideWidth, height: model.keyHeight)
-                    }
-                }.frame(maxWidth: .infinity)
+            keyboardRows(width: geometry.size.width)
+        }
+        .frame(height: CGFloat(model.rows.count + 1) * (model.keyHeight + 6) - 6 + 34)
+    }
+
+    private var mainLetterRow: String {
+        ["kk", "fr", "es"].contains(model.language.id) ? model.language.rows[1] : model.language.rows[0]
+    }
+
+    private func keyboardRows(width: CGFloat) -> some View {
+        VStack(spacing: 6) {
+            ForEach(Array(model.rows.enumerated()), id: \.offset) { item in
+                letterRow(item.element, last: item.offset == model.rows.count - 1, width: width)
             }
-            HStack(spacing: 4) {
-                key(model.symbolPage < 0 ? "123" : "АБВ", label: "Буквы и символы", width: 36, special: true) {
-                    model.symbolPage = model.symbolPage < 0 ? 0 : -1
-                    model.controller?.updateHeight()
+            bottomKeys
+            keyboardDock
+        }
+        .coordinateSpace(name: "letters")
+        .onPreferenceChange(LetterFramesKey.self) { letterFrames = $0 }
+        .simultaneousGesture(glideGesture)
+        .overlay { glideTrail }
+    }
+
+    private func letterRow(_ row: String, last: Bool, width: CGFloat) -> some View {
+        let columns = model.symbolPage < 0 ? mainLetterRow.count : 10
+        let standardWidth = max(10, (width - CGFloat(columns - 1) * 4) / CGFloat(columns))
+        let letterWidth = min(standardWidth, (width - CGFloat(row.count - 1) * 4) / CGFloat(row.count))
+        let sideWidth = max(16, (width - CGFloat(row.count) * letterWidth - CGFloat(row.count + 1) * 4) / 2)
+        return HStack(spacing: 4) {
+            if last { shiftKey(width: sideWidth) }
+            ForEach(Array(row.enumerated()), id: \.offset) { item in
+                characterKey(String(item.element), index: item.offset, row: row, width: letterWidth)
+            }
+            if last {
+                RepeatDeleteKey(palette: model.palette) { model.delete() }
+                    .frame(width: sideWidth, height: model.keyHeight)
+            }
+        }.frame(maxWidth: .infinity)
+    }
+
+    private func shiftKey(width: CGFloat) -> some View {
+        let label = model.symbolPage < 0 ? (model.caps ? "?" : "?") : (model.symbolPage == 0 ? "#+=" : "123")
+        return key(label, label: "Shift", width: width, special: true, accent: model.symbolPage < 0 && model.upper) { model.shift() }
+    }
+
+    private func characterKey(_ text: String, index: Int, row: String, width: CGFloat) -> some View {
+        let showHint = model.symbolPage < 0 && row == mainLetterRow && !model.preferences.numberRow && index < 10
+        let hint = showHint ? String((index + 1) % 10) : nil
+        let title = model.symbolPage < 0 && model.upper ? text.uppercased(with: Locale(identifier: model.language.locale)) : text
+        let kazakh = model.symbolPage < 0 && model.language.id == "kk" && row == model.language.rows[0]
+        return key(title, width: width, kazakh: kazakh, hint: hint) { model.typeCharacter(text) }
+            .background(GeometryReader { geometry in
+                Color.clear.preference(key: LetterFramesKey.self, value: text.first?.isLetter == true ? [text: geometry.frame(in: .named("letters"))] : [:])
+            })
+            .contextMenu {
+                if let hint { Button(hint) { model.insert(hint) } }
+            }
+    }
+
+    private var bottomKeys: some View {
+        HStack(spacing: 4) {
+            key(model.symbolPage < 0 ? "123" : "???", label: "????? ? ???????", width: 36, special: true) {
+                model.symbolPage = model.symbolPage < 0 ? 0 : -1
+                model.controller?.updateHeight()
+            }
+            key("?", label: "????????? ??????????", width: 30, special: true) { model.panel = "settings" }
+            key("??", label: "??????", width: 30, special: true) { model.panel = "emoji" }
+            CursorSpaceKey(title: model.language.name ?? model.language.title, palette: model.palette,
+                           insert: { model.insert(" ", space: true) }, move: { model.moveCursor($0) })
+                .frame(maxWidth: .infinity).frame(height: model.keyHeight)
+            key(".", width: 28, special: true) { model.insert(".") }
+            key("?", label: "????", width: 44, special: true, accent: true) { model.insert("\n") }
+        }
+    }
+
+    private var keyboardDock: some View {
+        HStack(spacing: 12) {
+            if let controller = model.controller {
+                SystemGlobeKey(controller: controller, palette: model.palette).frame(width: 32, height: 28)
+            }
+            Button(model.language.title) { model.nextLanguage() }
+                .font(.system(size: 12, weight: .medium)).frame(minWidth: 35, minHeight: 28)
+                .buttonStyle(.plain).accessibilityLabel("??????? ????")
+                .contextMenu {
+                    ForEach(model.layouts.languages.filter { model.preferences.enabledLanguages.contains($0.id) }) { language in
+                        Button(language.name ?? language.title) { model.selectLanguage(language.id) }
+                    }
+                    Button("???????? ????") { model.panel = "settings" }
                 }
-                key("⚙", label: "Настройки клавиатуры", width: 30, special: true) { model.panel = "settings" }
-                key("😀", label: "Эмодзи", width: 30, special: true) { model.panel = "emoji" }
-                CursorSpaceKey(title: model.language.name ?? model.language.title, palette: model.palette,
-                               insert: { model.insert(" ", space: true) }, move: { model.moveCursor($0) })
-                    .frame(maxWidth: .infinity).frame(height: model.keyHeight)
-                key(".", width: 28, special: true) { model.insert(".") }
-                key("↵", label: "Ввод", width: 44, special: true, accent: true) { model.insert("\n") }
-            }
-            HStack(spacing: 12) {
-                if let controller = model.controller { SystemGlobeKey(controller: controller, palette: model.palette).frame(width: 32, height: 28) }
-                Button(model.language.title) { model.nextLanguage() }
-                    .font(.system(size: 12, weight: .medium)).frame(minWidth: 35, minHeight: 28)
-                    .buttonStyle(.plain).accessibilityLabel("Сменить язык")
-                    .contextMenu {
-                        ForEach(model.layouts.languages.filter { model.preferences.enabledLanguages.contains($0.id) }) { language in
-                            Button(language.name ?? language.title) { model.selectLanguage(language.id) }
-                        }
-                        Button("Добавить язык") { model.panel = "settings" }
-                    }
-                Spacer()
-                Text("CoolBoard").font(.system(size: 11)).foregroundColor(Color(model.palette.muted))
-            }.padding(.horizontal, 5)
-          }
-          .coordinateSpace(name: "letters")
-          .onPreferenceChange(LetterFramesKey.self) { letterFrames = $0 }
-          .simultaneousGesture(DragGesture(minimumDistance: 12, coordinateSpace: .named("letters"))
+            Spacer()
+            Text("CoolBoard").font(.system(size: 11)).foregroundColor(Color(model.palette.muted))
+        }.padding(.horizontal, 5)
+    }
+
+    private var glideGesture: some Gesture {
+        DragGesture(minimumDistance: 12, coordinateSpace: .named("letters"))
             .onChanged { value in
                 guard model.preferences.glide, model.symbolPage < 0, model.searchTarget == nil,
                       letterFrames.values.contains(where: { $0.contains(value.startLocation) }) else { return }
                 if !model.gliding { model.beginGlide(at: value.startLocation) }
                 if model.glidePoints.count < 256 { model.glidePoints.append(value.location) }
-            }.onEnded { _ in
+            }
+            .onEnded { _ in
                 if model.gliding { model.finishGlide(centers: letterFrames.mapValues { CGPoint(x: $0.midX, y: $0.midY) }) }
-            })
-          .overlay {
-              Path { path in
-                  if let first = model.glidePoints.first { path.move(to: first); for point in model.glidePoints.dropFirst() { path.addLine(to: point) } }
-              }.stroke(Color(model.palette.accent).opacity(0.7), style: StrokeStyle(lineWidth: 4, lineCap: .round)).allowsHitTesting(false)
-          }
+            }
+    }
+
+    private var glideTrail: some View {
+        Path { path in
+            if let first = model.glidePoints.first {
+                path.move(to: first)
+                for point in model.glidePoints.dropFirst() { path.addLine(to: point) }
+            }
         }
-        .frame(height: CGFloat(model.rows.count + 1) * (model.keyHeight + 6) - 6 + 34)
+        .stroke(Color(model.palette.accent).opacity(0.7), style: StrokeStyle(lineWidth: 4, lineCap: .round))
+        .allowsHitTesting(false)
     }
 
     private var clips: some View {
