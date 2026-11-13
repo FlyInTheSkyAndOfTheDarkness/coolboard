@@ -9,6 +9,9 @@ final class KeyboardViewController: UIInputViewController {
         super.viewDidLoad()
         model = KeyboardModel(controller: self)
         let host = UIHostingController(rootView: KeyboardView(model: model))
+        // This view is already the keyboard. Hosting it must not apply a second
+        // keyboard avoidance/safe-area inset inside its explicit height.
+        if #available(iOS 16.4, *) { host.safeAreaRegions = [] }
         addChild(host)
         host.view.translatesAutoresizingMaskIntoConstraints = false
         host.view.backgroundColor = .clear
